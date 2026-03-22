@@ -10,9 +10,10 @@ class Link(Base):
     link_id = Column(String, primary_key=True, index=True)
     road_name = Column(String, nullable=True)
     length = Column(Float, nullable=True)
-    # LINESTRING geometry stored as WKB, SRID 4326 (WGS84)
+    # Geometry stored as WKB, SRID 4326 (WGS84)
+    # Using generic GEOMETRY type — actual data contains MULTILINESTRING
     geometry = Column(
-        Geometry(geometry_type="LINESTRING", srid=4326),
+        Geometry(geometry_type="GEOMETRY", srid=4326),
         nullable=False,
     )
 

@@ -12,11 +12,13 @@ Usage:
     cd app && python -m src.scripts.ingest
 """
 
+import io
 import logging
 import sys
 
 import geopandas as gpd
 import pandas as pd
+import requests
 from sqlalchemy import text
 
 logging.basicConfig(
@@ -64,7 +66,7 @@ def ingest_links(conn, gdf: gpd.GeoDataFrame) -> int:
     cols = list(gdf.columns)
     link_col = _find_col(cols, "link_id", "linkid", "id")
     name_col = _find_col(cols, "road_name", "street_name", "name", "roadname", "streetname")
-    len_col = _find_col(cols, "length", "seg_length", "shape_length", "shapeLength")
+    len_col = _find_col(cols, "length", "_length", "seg_length", "shape_length", "shapeLength")
 
     if not link_col:
         log.error(f"Cannot find link_id column. Available: {cols}")
@@ -176,11 +178,47 @@ def main() -> None:
     init_db()
 
     log.info(f"Downloading link info from:\n  {LINK_INFO_URL}")
-    gdf = gpd.read_parquet(LINK_INFO_URL)
-    log.info(f"  Loaded {len(gdf)} links | columns: {list(gdf.columns)}")
+    resp = requests.get(LINK_INFO_URL, timeout=120)
+    resp.raise_for_status()
+    link_df = pd.read_parquet(io.BytesIO(resp.content))
+    log.info(f"  Loaded {len(link_df)} links | columns: {list(link_df.columns)}")
+    # Detect geometry column and convert to GeoDataFrame
+    geom_col = _find_col(list(link_df.columns), "geometry", "geom", "shape", "wkt", "wkb", "geo_json", "geojson")
+    if not geom_col:
+        log.error(f"Cannot find geometry column. Available: {list(link_df.columns)}")
+        sys.exit(1)
+    log.info(f"Geometry column: '{geom_col}' | sample dtype: {link_df[geom_col].dtype}")
+    # Detect geometry format from sample value and parse accordingly
+    import json as _json
+    from shapely.geometry import shape as _shape
+    from shapely import from_wkb as _from_wkb, from_wkt as _from_wkt
+
+    sample = link_df[geom_col].dropna().iloc[0]
+    if isinstance(sample, (bytes, bytearray)):
+        log.info("Geometry format: WKB bytes")
+        geometries = link_df[geom_col].apply(lambda v: _from_wkb(bytes(v)) if v is not None else None)
+    elif isinstance(sample, str):
+        stripped = sample.strip()
+        if stripped.startswith("{"):
+            log.info("Geometry format: GeoJSON string")
+            from shapely import from_geojson as _from_geojson
+            geometries = link_df[geom_col].apply(
+                lambda v: _from_geojson(v) if v is not None else None
+            )
+        else:
+            log.info("Geometry format: WKT string")
+            geometries = link_df[geom_col].apply(lambda v: _from_wkt(v) if v is not None else None)
+    else:
+        log.error(f"Unrecognised geometry type: {type(sample)}")
+        sys.exit(1)
+
+    gdf = gpd.GeoDataFrame(link_df, geometry=geometries, crs="EPSG:4326")
+    log.info(f"  Converted to GeoDataFrame, CRS: {gdf.crs}")
 
     log.info(f"Downloading speed data from:\n  {SPEED_DATA_URL}")
-    df = pd.read_parquet(SPEED_DATA_URL)
+    resp = requests.get(SPEED_DATA_URL, timeout=300)
+    resp.raise_for_status()
+    df = pd.read_parquet(io.BytesIO(resp.content))
     log.info(f"  Loaded {len(df)} speed records | columns: {list(df.columns)}")
 
     with engine.begin() as conn:
