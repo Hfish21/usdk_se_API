@@ -1,0 +1,7 @@
+requests==2.31.0
+pandas==2.2.2
+geopandas==0.14.4
+mapboxgl==0.10.2
+jupyter==1.0.0
+notebook==7.1.0
+shapely==2.0.4
