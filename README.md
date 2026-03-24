@@ -2,6 +2,8 @@
 
 Senior Python Engineer take-home project. A FastAPI microservice that ingests traffic speed data for Duval County, FL, stores it in PostgreSQL + PostGIS, and exposes RESTful endpoints for spatial and temporal aggregation. Results are visualized via MapboxGL in a Jupyter notebook.
 
+> **How this was built:** I used Claude Code as an AI-assisted implementation tool, directing it against a pre-designed architecture and plan. The engineering decisions — data modeling, index strategy, query design, Docker orchestration — were made upfront before any code was written. For a full walkthrough of that process, see [APPROACH.md](./APPROACH.md).
+
 ---
 
 ## Architecture
